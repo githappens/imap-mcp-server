@@ -5,13 +5,23 @@ import os from 'os';
 import crypto from 'crypto';
 import { ImapAccount } from '../types/index.js';
 
+/**
+ * Base directory for the credential store. Defaults to ~/.imap-mcp, but can be
+ * overridden with IMAP_MCP_CONFIG_DIR so multiple isolated stores can coexist
+ * (e.g. one per project/account). Created on first write.
+ */
+function configBaseDir(): string {
+  const override = process.env.IMAP_MCP_CONFIG_DIR?.trim();
+  return override ? path.resolve(override) : path.join(os.homedir(), '.imap-mcp');
+}
+
 export class AccountManager {
   private configPath: string;
   private accounts: Map<string, ImapAccount> = new Map();
   private encryptionKey: string;
 
   constructor() {
-    this.configPath = path.join(os.homedir(), '.imap-mcp', 'accounts.json');
+    this.configPath = path.join(configBaseDir(), 'accounts.json');
     this.encryptionKey = this.getOrCreateEncryptionKey();
     this.loadAccountsSync();
   }
@@ -214,7 +224,7 @@ export class AccountManager {
   }
 
   private getOrCreateEncryptionKey(): string {
-    const keyPath = path.join(os.homedir(), '.imap-mcp', '.key');
+    const keyPath = path.join(configBaseDir(), '.key');
     
     try {
       return readFileSync(keyPath, 'utf-8');
