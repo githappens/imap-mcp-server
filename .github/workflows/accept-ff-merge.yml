@@ -10,7 +10,11 @@ name: Accept (fast-forward merge)
 # comments why, removes the label, and does not force anything.
 
 on:
-  pull_request:
+  # pull_request_target (not pull_request): the workflow file is read from the
+  # DEFAULT branch, so it triggers even though the labeled PR's branch predates
+  # this file. Safe here ONLY because this job never checks out or runs the PR's
+  # code — it just fast-forwards a git ref. Do not add code-executing steps.
+  pull_request_target:
     types: [labeled]
 
 permissions: {}
