@@ -77,6 +77,7 @@ jobs:
         if: steps.fetch.outputs.new_commits != '0' && steps.merge.outputs.conflict == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}   # pin gh to THIS fork (else fork PRs target the upstream parent)
         run: |
           B="${{ steps.merge.outputs.branch }}"
           N=$(gh pr list --head "$B" --state open --json number -q '.[0].number')
@@ -92,6 +93,7 @@ jobs:
         if: steps.fetch.outputs.new_commits != '0' && steps.merge.outputs.conflict == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}   # pin gh to THIS fork (else fork PRs target the upstream parent)
         run: |
           LOG=$(git log --oneline HEAD..upstream/$UPSTREAM_BRANCH)
           gh issue create \
@@ -162,3 +164,4 @@ jobs:
             --max-turns 20
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}   # pin gh to THIS fork (else fork PRs target the upstream parent)
