@@ -1,6 +1,6 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-import { ImapAccount, EmailMessage, EmailContent, EmailBodyFormat, EmailLocation, Folder, SearchCriteria, SearchOptions, DEFAULT_BODY_MAX_LENGTH, DEFAULT_BODY_FORMAT } from '../types/index.js';
+import { ImapAccount, EmailMessage, EmailContent, EmailBodyFormat, EmailLocation, Folder, SearchCriteria, SearchOptions, DEFAULT_BODY_MAX_LENGTH, DEFAULT_BODY_FORMAT, isSystemFlag } from '../types/index.js';
 import type { AccountManager } from './account-manager.js';
 import { htmlToMarkdown, normalizeWhitespace } from './html-to-markdown.js';
 
@@ -388,6 +388,7 @@ export class ImapService {
       const messages: EmailMessage[] = [];
 
       for await (const msg of client.fetch(uids, fetchQuery, { uid: true })) {
+        const flags = Array.from(msg.flags || []) as string[];
         const base: EmailMessage = {
           uid: msg.uid,
           date: new Date(msg.internalDate || msg.envelope?.date || Date.now()),
@@ -396,7 +397,8 @@ export class ImapService {
           subject: msg.envelope?.subject || '',
           messageId: msg.envelope?.messageId || '',
           inReplyTo: msg.envelope?.inReplyTo,
-          flags: Array.from(msg.flags || []),
+          flags,
+          customKeywords: flags.filter(f => !isSystemFlag(f)),
         };
 
         if (!includeBody || !msg.source) {
@@ -497,6 +499,7 @@ export class ImapService {
       const messages: EmailMessage[] = [];
 
       for await (const msg of client.fetch(latestUids, fetchQuery, { uid: true })) {
+        const flags = Array.from(msg.flags || []) as string[];
         const base: EmailMessage = {
           uid: msg.uid,
           date: new Date(msg.internalDate || msg.envelope?.date || Date.now()),
@@ -505,7 +508,8 @@ export class ImapService {
           subject: msg.envelope?.subject || '',
           messageId: msg.envelope?.messageId || '',
           inReplyTo: msg.envelope?.inReplyTo,
-          flags: Array.from(msg.flags || []),
+          flags,
+          customKeywords: flags.filter(f => !isSystemFlag(f)),
         };
 
         if (!includeBody || !msg.source) {
@@ -596,6 +600,7 @@ export class ImapService {
     } = options;
 
     const parsed = await simpleParser(source);
+    const flagArray = Array.from(flags || []) as string[];
 
     const cap = (s: string | undefined): string | undefined => {
       if (s === undefined) return undefined;
@@ -667,7 +672,8 @@ export class ImapService {
       subject: parsed.subject || '',
       messageId: parsed.messageId || '',
       inReplyTo: parsed.inReplyTo as string | undefined,
-      flags: Array.from(flags || []),
+      flags: flagArray,
+      customKeywords: flagArray.filter(f => !isSystemFlag(f)),
       headers,
       textContent,
       htmlContent,
@@ -886,6 +892,82 @@ export class ImapService {
         failed: [...uidList],
         errors: [`Failed to ${mode === 'add' ? 'mark as read' : 'mark as unread'} UIDs [${uidList.join(', ')}]: ${message}`],
       };
+    } finally {
+      if (lock) {
+        lock.release();
+      }
+    }
+  }
+
+  async flagEmail(accountId: string, folderName: string, uid: number): Promise<void> {
+    const client = await this.ensureConnected(accountId);
+
+    let lock;
+    try {
+      lock = await client.getMailboxLock(folderName);
+      await client.messageFlagsAdd(uid, ['\\Flagged'], { uid: true });
+    } finally {
+      if (lock) {
+        lock.release();
+      }
+    }
+  }
+
+  async unflagEmail(accountId: string, folderName: string, uid: number): Promise<void> {
+    const client = await this.ensureConnected(accountId);
+
+    let lock;
+    try {
+      lock = await client.getMailboxLock(folderName);
+      await client.messageFlagsRemove(uid, ['\\Flagged'], { uid: true });
+    } finally {
+      if (lock) {
+        lock.release();
+      }
+    }
+  }
+
+  async addKeyword(accountId: string, folderName: string, uid: number, keyword: string): Promise<void> {
+    if (isSystemFlag(keyword)) {
+      throw new Error(
+        `"${keyword}" is a system flag, not a custom keyword. Use the dedicated tool instead ` +
+        `(e.g. imap_flag_email for \\Flagged, imap_mark_as_read for \\Seen).`
+      );
+    }
+
+    const client = await this.ensureConnected(accountId);
+
+    let lock;
+    try {
+      lock = await client.getMailboxLock(folderName);
+      const result = await client.messageFlagsAdd(uid, [keyword], { uid: true });
+      if (!result) {
+        throw new Error(`Server did not apply keyword "${keyword}" to email UID ${uid} in ${folderName} (message not found or server rejected the change)`);
+      }
+    } finally {
+      if (lock) {
+        lock.release();
+      }
+    }
+  }
+
+  async removeKeyword(accountId: string, folderName: string, uid: number, keyword: string): Promise<void> {
+    if (isSystemFlag(keyword)) {
+      throw new Error(
+        `"${keyword}" is a system flag, not a custom keyword. Use the dedicated tool instead ` +
+        `(e.g. imap_flag_email for \\Flagged, imap_mark_as_read for \\Seen).`
+      );
+    }
+
+    const client = await this.ensureConnected(accountId);
+
+    let lock;
+    try {
+      lock = await client.getMailboxLock(folderName);
+      const result = await client.messageFlagsRemove(uid, [keyword], { uid: true });
+      if (!result) {
+        throw new Error(`Server did not remove keyword "${keyword}" from email UID ${uid} in ${folderName} (message not found or server rejected the change)`);
+      }
     } finally {
       if (lock) {
         lock.release();
@@ -1290,6 +1372,7 @@ export class ImapService {
         source: true,
       };
       for await (const msg of client.fetch(sortedUids, fetchQuery, { uid: true })) {
+        const flags = Array.from(msg.flags || []) as string[];
         const base: EmailMessage = {
           uid: msg.uid,
           date: new Date(msg.internalDate || msg.envelope?.date || Date.now()),
@@ -1298,7 +1381,8 @@ export class ImapService {
           subject: msg.envelope?.subject || '',
           messageId: msg.envelope?.messageId || '',
           inReplyTo: msg.envelope?.inReplyTo,
-          flags: Array.from(msg.flags || []),
+          flags,
+          customKeywords: flags.filter(f => !isSystemFlag(f)),
         };
         if (!msg.source) {
           messages.push({ ...base, bodyFormat });
@@ -1508,6 +1592,42 @@ export class ImapService {
       // exact equality against the fetched envelope.messageId afterwards.
       query.header = { 'message-id': this.bracketMessageId(criteria.messageId) };
     }
+    if (criteria.keywords && criteria.keywords.length > 0) {
+      for (const keyword of criteria.keywords) {
+        if (isSystemFlag(keyword)) {
+          throw new Error(
+            `"${keyword}" is a system flag, not a custom keyword. Use the dedicated params instead ` +
+            `(e.g. flagged for \\Flagged, seen for \\Seen).`
+          );
+        }
+      }
+      // imapflow's `keyword` field only accepts a single string, so an OR
+      // across multiple keywords is composed via imapflow's `or` (binary-tree
+      // expanded internally, so any number of operands is supported).
+      if (criteria.keywords.length === 1) {
+        query.keyword = criteria.keywords[0];
+      } else {
+        query.or = criteria.keywords.map(keyword => ({ keyword }));
+      }
+    }
+    if (criteria.unKeywords && criteria.unKeywords.length > 0) {
+      for (const keyword of criteria.unKeywords) {
+        if (isSystemFlag(keyword)) {
+          throw new Error(
+            `"${keyword}" is a system flag, not a custom keyword. Use the dedicated params instead ` +
+            `(e.g. flagged for \\Flagged, seen for \\Seen).`
+          );
+        }
+      }
+      if (criteria.unKeywords.length === 1) {
+        query.unKeyword = criteria.unKeywords[0];
+      } else {
+        // imapflow's `unKeyword` field only accepts a single string, so
+        // excluding multiple keywords ANDs cleanly via De Morgan's law:
+        // NOT (has k1 OR has k2 OR ...) == has none of k1, k2, ...
+        query.not = { or: criteria.unKeywords.map(keyword => ({ keyword })) };
+      }
+    }
 
     // If no criteria, search all
     if (Object.keys(query).length === 0) {
@@ -1612,6 +1732,7 @@ export class ImapService {
             from: msg.from,
             date: msg.date,
             flags: msg.flags,
+            customKeywords: msg.customKeywords,
             foldersSearched,
           };
         }

@@ -310,6 +310,11 @@ Once configured, the IMAP MCP server provides the following tools in Claude:
   - from, to, subject, body: Search criteria
   - since, before: Date filters
   - seen, flagged: Status filters
+  - keywords: Match messages with ANY of these custom keywords (server-side OR).
+      Read a mailbox's available custom keywords from `imap_folder_status`'s
+      `customKeywords` field first.
+  - unKeywords: Exclude messages with ANY of these custom keywords (result has
+      NONE of them). Same keyword source as `keywords`.
   - limit: Max results (default: 50)
   - includeBody: Include parsed message body in the response (default: false).
       Fetches the RFC822 source once and parses it with mailparser, so you get
@@ -329,6 +334,12 @@ Once configured, the IMAP MCP server provides the following tools in Claude:
   > pulling RFC822 source for every match across many folders would multiply
   > bandwidth and parse cost. Follow up with `imap_get_email` for the specific
   > uids whose bodies you need.
+  >
+  > On some servers a "flagged"/starred message carries a custom keyword (e.g.
+  > an Open-Xchange color label or Apple's `$MailFlagBit*`) instead of, or in
+  > addition to, the `\Flagged` system flag — after any flagged search, check
+  > each result's `customKeywords` field before concluding a message is or
+  > isn't flagged.
 
 - **imap_get_email**: Get full email content
   ```
@@ -362,6 +373,23 @@ Once configured, the IMAP MCP server provides the following tools in Claude:
   - uid: Email UID, OR an array of UIDs to flag in one call. Batch uses a
       single IMAP STORE so the operation is atomic at the server level — all
       UIDs are flagged, or none. Useful when triaging many messages at once.
+  ```
+
+- **imap_flag_email/unflag_email**: Star/unstar an email (sets or clears the IMAP \Flagged system flag — shows as a "star" in Gmail and Apple Mail). Some servers/clients (Open-Xchange, Apple Mail) also set a separate custom keyword (e.g. `$cl_N`, `$MailFlagBit*`) when flagging; unflag only clears `\Flagged`, so if a message still shows as flagged, check `customKeywords` via `imap_get_email` and clear it with `imap_remove_keyword`.
+  ```
+  Parameters:
+  - accountId: Account ID
+  - folder: Folder name
+  - uid: Email UID
+  ```
+
+- **imap_add_keyword/remove_keyword**: Set or clear an arbitrary *custom* (non-system) IMAP keyword/label on an email, passed through verbatim (e.g. provider color labels like Open-Xchange's `$cl_1`..`$cl_10` or Apple Mail's `$MailFlagBit0`..`$MailFlagBit2`, or any other custom keyword). Backslash-prefixed system flags (e.g. `\Flagged`, `\Seen`, `\Deleted`) are rejected — use the dedicated flag/read tools for those. Not every server permits custom-keyword changes (see the mailbox's PERMANENTFLAGS); if the server rejects or silently ignores the change, the call fails instead of reporting success.
+  ```
+  Parameters:
+  - accountId: Account ID
+  - folder: Folder name
+  - uid: Email UID
+  - keyword: IMAP keyword to set/remove (e.g. "$cl_3")
   ```
 
 - **imap_delete_email**: Delete an email
