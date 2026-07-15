@@ -112,6 +112,7 @@ jobs:
     permissions:
       contents: read           # read code; cannot push or merge
       pull-requests: write      # post the review comment
+      id-token: write           # claude-code-action mints an OIDC token for its GitHub App (not repo write)
     steps:
       - uses: actions/checkout@v7
         with:
