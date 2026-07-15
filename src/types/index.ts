@@ -36,6 +36,7 @@ export interface EmailMessage {
   messageId: string;
   inReplyTo?: string;
   flags: string[];
+  customKeywords: string[];
 }
 
 export type EmailBodyFormat = 'markdown' | 'text' | 'html' | 'auto';
@@ -79,7 +80,36 @@ export interface SearchCriteria {
   answered?: boolean;
   draft?: boolean;
   messageId?: string;
+  /** Match messages that have ANY of these custom keywords (server-side OR). */
+  keywords?: string[];
+  /** Exclude messages that have ANY of these custom keywords (server-side; result has NONE of them). */
+  unKeywords?: string[];
 }
+
+/**
+ * Output-shaping options for search / latest / thread-fetch operations.
+ * Distinct from `SearchCriteria` (the IMAP search *filter*) — these control
+ * how the returned messages are *rendered* (e.g. whether to parse and include
+ * the message body, what format to use, and how big each body may be).
+ */
+export interface SearchOptions {
+  /** When true, also fetch the RFC822 source for each matched UID, parse it
+   * with mailparser, and attach body fields to each returned `EmailMessage`.
+   * Defaults to false to preserve the existing lightweight-header behavior. */
+  includeBody?: boolean;
+  /** Body rendering mode when `includeBody` is true. Mirrors `imap_get_email`'s
+   * `bodyFormat` parameter. Defaults to 'markdown' so a single raw HTML part
+   * never crosses the MCP boundary unless explicitly requested. */
+  bodyFormat?: EmailBodyFormat;
+  /** Cap on body field length per message (per body field independently).
+   * Defaults to 10000, matching `imap_get_email`'s `maxContentLength`. */
+  bodyMaxLength?: number;
+}
+
+/** Default body length cap when none is supplied (matches `imap_get_email`). */
+export const DEFAULT_BODY_MAX_LENGTH = 10000;
+/** Default body format when `includeBody` is true and none is supplied. */
+export const DEFAULT_BODY_FORMAT: EmailBodyFormat = 'markdown';
 
 export interface EmailLocation {
   found: boolean;
@@ -90,6 +120,7 @@ export interface EmailLocation {
   from?: string;
   date?: Date;
   flags?: string[];
+  customKeywords?: string[];
   foldersSearched?: string[];
 }
 
@@ -118,4 +149,12 @@ export interface EmailAttachment {
   contentType?: string;
   contentDisposition?: 'attachment' | 'inline';
   cid?: string;
+}
+
+/** RFC 3501 system flags (documentation/tests only — see isSystemFlag for the authoritative check). */
+export const SYSTEM_FLAGS = ['\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft', '\\Recent'];
+
+/** RFC 3501: all system flags (and server extensions like `\*`) are backslash-prefixed; custom keywords never are. */
+export function isSystemFlag(flag: string): boolean {
+  return flag.startsWith('\\');
 }
